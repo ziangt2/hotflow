@@ -1,6 +1,7 @@
 import json
 import os
 import time
+import socket
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -216,7 +217,8 @@ def http_json(url: str, method: str = "GET", headers: Optional[Dict[str, str]] =
   request.add_header("Accept", "application/json")
   if body is not None:
     request.add_header("Content-Type", "application/json")
-  with urllib.request.urlopen(request, timeout=25) as response:
+  timeout = float(os.environ.get("HOTFLOW_HTTP_TIMEOUT_SECONDS", "25"))
+  with urllib.request.urlopen(request, timeout=timeout) as response:
     charset = response.headers.get_content_charset() or "utf-8"
     payload = response.read().decode(charset)
     return json.loads(payload)
@@ -275,20 +277,59 @@ class ApifySource:
       return SourceResult(self.display_name, False, 0, [], "未配置 Apify")
 
     body = parse_json_env(f"APIFY_{self.env_prefix}_INPUT", {"limit": 10})
-    params = urllib.parse.urlencode({"token": token, "clean": "true"})
-    url = f"https://api.apify.com/v2/acts/{actor_id}/run-sync-get-dataset-items?{params}"
+    actor_ref = actor_id.replace("/", "~")
 
     try:
-      payload = http_json(url, method="POST", body=body if isinstance(body, dict) else {"limit": 10})
-      items = payload if isinstance(payload, list) else payload.get("items", [])
+      items = self._run_actor_and_fetch_items(token, actor_ref, body if isinstance(body, dict) else {"limit": 10})
       normalized = [
         normalize_item(item, f"apify-{self.env_prefix.lower()}", self.fallback_platform)
         for item in items
         if isinstance(item, dict)
       ]
       return SourceResult(self.display_name, True, len(normalized), normalized)
+    except urllib.error.HTTPError as exc:
+      return SourceResult(self.display_name, False, 0, [], f"HTTP Error {exc.code}: {exc.reason}")
+    except socket.timeout:
+      return SourceResult(self.display_name, False, 0, [], "Apify run timed out")
     except Exception as exc:
       return SourceResult(self.display_name, False, 0, [], str(exc))
+
+  def _run_actor_and_fetch_items(self, token: str, actor_ref: str, actor_input: Dict[str, Any]) -> List[Dict[str, Any]]:
+    run_url = f"https://api.apify.com/v2/acts/{actor_ref}/runs?token={urllib.parse.quote(token)}"
+    run_payload = http_json(run_url, method="POST", body=actor_input)
+    run_data = run_payload.get("data", {}) if isinstance(run_payload, dict) else {}
+    run_id = run_data.get("id")
+    if not run_id:
+      raise ValueError("Apify did not return a run id")
+
+    max_wait = int(os.environ.get("APIFY_RUN_WAIT_SECONDS", "45"))
+    poll_interval = float(os.environ.get("APIFY_POLL_INTERVAL_SECONDS", "2.5"))
+    deadline = time.time() + max_wait
+
+    while time.time() < deadline:
+      status_url = f"https://api.apify.com/v2/actor-runs/{run_id}?token={urllib.parse.quote(token)}"
+      status_payload = http_json(status_url)
+      status_data = status_payload.get("data", {}) if isinstance(status_payload, dict) else {}
+      status = status_data.get("status", "")
+
+      if status == "SUCCEEDED":
+        dataset_id = status_data.get("defaultDatasetId")
+        if not dataset_id:
+          return []
+        dataset_url = (
+          f"https://api.apify.com/v2/datasets/{dataset_id}/items"
+          f"?token={urllib.parse.quote(token)}&clean=true&format=json"
+        )
+        dataset_payload = http_json(dataset_url)
+        return dataset_payload if isinstance(dataset_payload, list) else dataset_payload.get("items", [])
+
+      if status in {"FAILED", "ABORTED", "TIMED-OUT"}:
+        status_message = status_data.get("statusMessage") or status
+        raise ValueError(f"Apify run failed: {status_message}")
+
+      time.sleep(poll_interval)
+
+    raise TimeoutError("Apify run timed out before results were ready")
 
 
 class TrendRepository:
