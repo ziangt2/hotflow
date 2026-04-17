@@ -22,6 +22,8 @@ const els = {
   sortFilter: document.getElementById("sortFilter"),
   refreshFilter: document.getElementById("refreshFilter"),
   positioningInput: document.getElementById("positioningInput"),
+  commandInput: document.getElementById("commandInput"),
+  commandButton: document.getElementById("commandButton"),
   syncButton: document.getElementById("syncButton"),
   sourceStatus: document.getElementById("sourceStatus"),
   topInsight: document.getElementById("topInsight"),
@@ -453,6 +455,75 @@ async function loadTrends() {
   }
 }
 
+async function runNaturalLanguageFlow() {
+  const prompt = els.commandInput.value.trim();
+  if (!prompt) {
+    return;
+  }
+
+  els.commandButton.disabled = true;
+  els.commandButton.textContent = "理解需求中...";
+
+  try {
+    const payload = await api("/api/command", {
+      method: "POST",
+      body: JSON.stringify({ prompt })
+    });
+
+    const parsed = payload.parsed || {};
+    if (parsed.keyword) {
+      state.keyword = parsed.keyword;
+      els.keywordInput.value = parsed.keyword;
+    }
+    if (parsed.platform) {
+      state.platform = parsed.platform;
+    }
+    if (parsed.category) {
+      state.category = parsed.category;
+    }
+    if (parsed.sortBy) {
+      state.sortBy = parsed.sortBy;
+      els.sortFilter.value = parsed.sortBy;
+    }
+    if (parsed.positioning) {
+      els.positioningInput.value = parsed.positioning;
+    }
+    if (parsed.offer) {
+      els.offerInput.value = parsed.offer;
+    }
+    if (parsed.audience) {
+      els.audienceInput.value = parsed.audience;
+    }
+    if (parsed.goal) {
+      els.goalInput.value = parsed.goal;
+    }
+    if (parsed.tone) {
+      els.toneInput.value = parsed.tone;
+    }
+    if (parsed.mimicLevel) {
+      els.mimicInput.value = parsed.mimicLevel;
+    }
+
+    await loadTrends();
+
+    const matchedVideos = filteredVideos();
+    if (matchedVideos[0]) {
+      state.selectedId = matchedVideos[0].id;
+      render();
+    }
+
+    if (parsed.autoGenerate && matchedVideos.length > 0) {
+      els.commandButton.textContent = "生成内容中...";
+      await generatePack();
+    }
+  } catch (error) {
+    els.topInsight.innerHTML = `<p class="analysis-meta">智能指令执行失败：${error.message}</p>`;
+  } finally {
+    els.commandButton.disabled = false;
+    els.commandButton.textContent = "智能搜索并生成";
+  }
+}
+
 async function generatePack() {
   const selectedVideo = getSelectedVideo(filteredVideos());
   if (!selectedVideo) {
@@ -824,6 +895,7 @@ function bindEvents() {
   });
 
   els.positioningInput.addEventListener("input", () => renderInsight(filteredVideos()));
+  els.commandButton.addEventListener("click", runNaturalLanguageFlow);
   els.syncButton.addEventListener("click", loadTrends);
   els.generateButton.addEventListener("click", generatePack);
   els.previewButton.addEventListener("click", generatePreviewVideo);
