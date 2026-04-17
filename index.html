@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>HotFlow - 热点视频生成台</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Noto+Sans+SC:wght@400;500;700;900&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div>
+          <p class="eyebrow">Trend-To-Video Studio</p>
+          <h1>HotFlow</h1>
+          <p class="sidebar-copy">
+            先拉真实热点，再拆内容结构，最后批量生成标题、完整口播、封面文案和 CTA。
+          </p>
+        </div>
+
+        <section class="filter-card">
+          <h2>筛选器</h2>
+          <label>
+            关键词搜索
+            <input
+              id="keywordInput"
+              type="text"
+              placeholder="搜全平台热点，比如：AI / 探店 / 升职 / 宝妈"
+            />
+          </label>
+          <label>
+            平台
+            <select id="platformFilter">
+              <option value="全部">全部</option>
+            </select>
+          </label>
+          <label>
+            赛道
+            <select id="categoryFilter">
+              <option value="全部">全部</option>
+            </select>
+          </label>
+          <label>
+            爆款排序
+            <select id="sortFilter">
+              <option value="views">按播放量</option>
+              <option value="likes">按点赞量</option>
+              <option value="heat">按综合热度</option>
+              <option value="shares">按分享量</option>
+            </select>
+          </label>
+          <label>
+            自动刷新
+            <select id="refreshFilter">
+              <option value="0">手动刷新</option>
+              <option value="60">每 1 分钟</option>
+              <option value="180">每 3 分钟</option>
+              <option value="300">每 5 分钟</option>
+            </select>
+          </label>
+          <label>
+            账号定位
+            <input
+              id="positioningInput"
+              type="text"
+              placeholder="比如：AI副业 / 本地餐饮探店 / 美业获客"
+            />
+          </label>
+          <button id="syncButton" class="ghost-button">同步真实热点</button>
+        </section>
+
+        <section class="insight-card">
+          <p class="eyebrow">数据源状态</p>
+          <div id="sourceStatus" class="status-row"></div>
+        </section>
+
+        <section class="insight-card">
+          <p class="eyebrow">今日建议</p>
+          <div id="topInsight"></div>
+        </section>
+      </aside>
+
+      <main class="main-content">
+        <section class="hero-card">
+          <div>
+            <p class="eyebrow">真实数据工作台</p>
+            <h2>发现正在起量的视频模型</h2>
+            <p class="hero-copy">
+              前端通过 API 拉热点，后端负责聚合数据源和生成内容。配置完成后，这里会展示真实抓取结果。
+            </p>
+          </div>
+          <div class="stat-grid">
+            <article>
+              <span>热点视频</span>
+              <strong id="videoCount">0</strong>
+            </article>
+            <article>
+              <span>高可跟拍</span>
+              <strong id="highPotentialCount">0</strong>
+            </article>
+            <article>
+              <span>平均热度</span>
+              <strong id="avgHeat">0</strong>
+            </article>
+          </div>
+        </section>
+
+        <section class="dashboard-grid">
+          <div class="panel">
+            <div class="panel-head">
+              <h3>热点视频池</h3>
+              <span id="resultMeta"></span>
+            </div>
+            <div id="trendList" class="trend-list"></div>
+          </div>
+
+          <div class="panel detail-panel">
+            <div class="panel-head">
+              <h3>爆点拆解</h3>
+              <span>根据真实热点自动分析</span>
+            </div>
+            <div id="analysisPanel" class="analysis-panel empty-state">
+              同步到真实热点后，选择左侧视频查看结构和可复用钩子。
+            </div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h3>各类别当前爆款榜</h3>
+            <span>按你选择的排序方式实时取每个类别 Top 1</span>
+          </div>
+          <div id="leaderboard" class="leaderboard"></div>
+        </section>
+
+        <section class="panel generator-panel">
+          <div class="panel-head">
+            <h3>内容包生成器</h3>
+            <span>输出标题、口播、封面文案、分镜与 CTA</span>
+          </div>
+
+          <div class="generator-form">
+            <label>
+              你的产品 / 服务
+              <input id="offerInput" type="text" placeholder="比如：AI剪辑课 / 本地咖啡店 / 加盟服务" />
+            </label>
+            <label>
+              目标用户
+              <input id="audienceInput" type="text" placeholder="比如：想做副业的人 / 附近 3km 白领" />
+            </label>
+            <label>
+              视频目标
+              <select id="goalInput">
+                <option value="引流加微信">引流加微信</option>
+                <option value="评论区互动">评论区互动</option>
+                <option value="私信咨询">私信咨询</option>
+                <option value="直播预约">直播预约</option>
+              </select>
+            </label>
+            <label>
+              文案语气
+              <select id="toneInput">
+                <option value="强转化、节奏快">强转化、节奏快</option>
+                <option value="真诚分享、可信">真诚分享、可信</option>
+                <option value="专业拆解、像顾问">专业拆解、像顾问</option>
+                <option value="情绪共鸣、容易收藏">情绪共鸣、容易收藏</option>
+              </select>
+            </label>
+            <label>
+              仿爆款强度
+              <select id="mimicInput">
+                <option value="低">低</option>
+                <option value="中" selected>中</option>
+                <option value="高">高</option>
+              </select>
+            </label>
+            <button id="generateButton" class="primary-button">生成完整内容包</button>
+          </div>
+
+          <div id="scriptOutput" class="script-output empty-state">
+            同步到真实热点并选中一条视频后，这里会生成完整口播文案、标题、封面文案和分镜建议。
+          </div>
+        </section>
+
+        <section class="panel generator-panel">
+          <div class="panel-head">
+            <h3>视频预览生成器</h3>
+            <span>把内容包自动排成竖版短视频预览</span>
+          </div>
+
+          <div class="video-tool-row">
+            <label>
+              视频时长
+              <select id="videoLengthInput">
+                <option value="12">12 秒</option>
+                <option value="18" selected>18 秒</option>
+                <option value="24">24 秒</option>
+              </select>
+            </label>
+            <label>
+              视频风格
+              <select id="videoThemeInput">
+                <option value="增长橙金">增长橙金</option>
+                <option value="高级米白">高级米白</option>
+                <option value="冷感青绿">冷感青绿</option>
+              </select>
+            </label>
+            <button id="previewButton" class="primary-button">生成视频预览</button>
+          </div>
+
+          <div id="videoOutput" class="video-output empty-state">
+            先生成一份内容包，然后这里会出现可播放、可下载的视频预览。
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
