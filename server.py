@@ -487,8 +487,121 @@ class ContentGenerator:
     }
 
 
+class CommandInterpreter:
+  def __init__(self, content_generator: ContentGenerator):
+    self.content_generator = content_generator
+
+  def interpret(self, prompt: str) -> Dict[str, Any]:
+    if self.content_generator.api_key:
+      try:
+        return self._interpret_with_openai(prompt)
+      except Exception:
+        return self._interpret_with_rules(prompt)
+    return self._interpret_with_rules(prompt)
+
+  def _interpret_with_openai(self, prompt: str) -> Dict[str, Any]:
+    body = {
+      "model": self.content_generator.model,
+      "instructions": (
+        "你是短视频选题助手。把用户的中文需求解析成 JSON。"
+        "只返回 JSON，不要 markdown。"
+        "字段固定为 keyword, platform, category, positioning, offer, audience, goal, tone, mimicLevel, sortBy, autoGenerate。"
+        "platform 只能是 全部/抖音/小红书/视频号。"
+        "category 只能是 全部/副业/餐饮/知识/美业/教育。"
+        "sortBy 只能是 views/likes/heat/shares。"
+        "goal 只能是 引流加微信/评论区互动/私信咨询/直播预约。"
+        "tone 只能是 强转化、节奏快/真诚分享、可信/专业拆解、像顾问/情绪共鸣、容易收藏。"
+        "mimicLevel 只能是 低/中/高。"
+        "autoGenerate 返回 true 或 false。"
+      ),
+      "input": prompt
+    }
+    response = http_json(
+      "https://api.openai.com/v1/responses",
+      method="POST",
+      headers={"Authorization": f"Bearer {self.content_generator.api_key}"},
+      body=body
+    )
+    text = self.content_generator._extract_output_text(response)
+    return json.loads(text)
+
+  def _interpret_with_rules(self, prompt: str) -> Dict[str, Any]:
+    text = prompt.strip()
+    lower = text.lower()
+    platform = "全部"
+    if "小红书" in text:
+      platform = "小红书"
+    elif "视频号" in text:
+      platform = "视频号"
+    elif "抖音" in text or "douyin" in lower:
+      platform = "抖音"
+
+    category = "全部"
+    category_map = {
+      "副业": ["副业", "赚钱", "ai副业", "搞钱"],
+      "餐饮": ["咖啡", "餐饮", "探店", "小店", "本地"],
+      "知识": ["职场", "知识", "升职", "管理", "口播"],
+      "美业": ["美业", "美容", "皮肤", "护肤"],
+      "教育": ["英语", "教育", "宝妈", "启蒙", "学习"]
+    }
+    for maybe_category, words in category_map.items():
+      if any(word in text for word in words):
+        category = maybe_category
+        break
+
+    sort_by = "views"
+    if "点赞" in text:
+      sort_by = "likes"
+    elif "分享" in text:
+      sort_by = "shares"
+    elif "热度" in text:
+      sort_by = "heat"
+
+    goal = "引流加微信"
+    if "评论" in text:
+      goal = "评论区互动"
+    elif "私信" in text:
+      goal = "私信咨询"
+    elif "直播" in text:
+      goal = "直播预约"
+
+    tone = "强转化、节奏快"
+    if "真诚" in text or "可信" in text:
+      tone = "真诚分享、可信"
+    elif "专业" in text or "顾问" in text:
+      tone = "专业拆解、像顾问"
+    elif "共鸣" in text or "收藏" in text:
+      tone = "情绪共鸣、容易收藏"
+
+    mimic_level = "中"
+    if "高度模仿" in text or "贴着爆款" in text:
+      mimic_level = "高"
+    elif "参考" in text or "轻一点" in text:
+      mimic_level = "低"
+
+    keyword = text
+    for noise in ["帮我找", "帮我搜", "帮我看", "最近", "然后", "并且", "生成", "模仿", "视频", "短视频", "爆款", "热点", "一条"]:
+      keyword = keyword.replace(noise, " ")
+    keyword = " ".join(keyword.split())[:40] or text[:20]
+
+    return {
+      "keyword": keyword,
+      "platform": platform,
+      "category": category,
+      "positioning": "",
+      "offer": "AI剪辑课" if "ai" in lower else "",
+      "audience": "想做副业的人" if "副业" in text else "",
+      "goal": goal,
+      "tone": tone,
+      "mimicLevel": mimic_level,
+      "sortBy": sort_by,
+      "autoGenerate": True
+    }
+
+
 repository = TrendRepository()
 generator = ContentGenerator()
+interpreter = CommandInterpreter(generator)
 
 
 class HotFlowHandler(BaseHTTPRequestHandler):
@@ -503,6 +616,9 @@ class HotFlowHandler(BaseHTTPRequestHandler):
     parsed = urllib.parse.urlparse(self.path)
     if parsed.path == "/api/generate":
       self.handle_api_generate()
+      return
+    if parsed.path == "/api/command":
+      self.handle_api_command()
       return
     self.send_json({"error": "Not found"}, status=404)
 
@@ -526,6 +642,17 @@ class HotFlowHandler(BaseHTTPRequestHandler):
       payload = json.loads(body)
       content = generator.generate(payload)
       self.send_json({"content": content})
+    except Exception as exc:
+      self.send_json({"error": str(exc)}, status=500)
+
+  def handle_api_command(self):
+    try:
+      length = int(self.headers.get("Content-Length", "0"))
+      body = self.rfile.read(length).decode("utf-8") if length else "{}"
+      payload = json.loads(body)
+      prompt = str(payload.get("prompt", "")).strip()
+      parsed = interpreter.interpret(prompt)
+      self.send_json({"parsed": parsed})
     except Exception as exc:
       self.send_json({"error": str(exc)}, status=500)
 
